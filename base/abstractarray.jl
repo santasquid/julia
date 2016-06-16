@@ -629,6 +629,7 @@ next(A::AbstractArray,i) = (@_propagate_inbounds_meta; (idx, s) = next(i[1], i[2
 done(A::AbstractArray,i) = (@_propagate_inbounds_meta; done(i[1], i[2]))
 
 # eachindex iterates over all indices. LinearSlow definitions are later.
+eachindex(A::AbstractVector) = (@_inline_meta(); indices1(A))
 eachindex(A::AbstractArray) = (@_inline_meta(); eachindex(linearindexing(A), A))
 
 function eachindex(A::AbstractArray, B::AbstractArray)
@@ -1326,11 +1327,6 @@ _lookup(ind, d::Integer) = ind+1
 _lookup(ind, r::UnitRange) = ind+first(r)
 _div(ind, d::Integer) = div(ind, d), 1, d
 _div(ind, r::UnitRange) = (d = unsafe_length(r); (div(ind, d), first(r), d))
-
-smart_ind2sub(shape::NTuple{1}, ind) = (ind,)
-smart_ind2sub(shape, ind) = ind2sub(shape, ind)
-smart_sub2ind(shape::NTuple{1}, i) = (i,)
-smart_sub2ind(shape, I...) = (@_inline_meta; sub2ind(shape, I...))
 
 # Vectorized forms
 function sub2ind{N,T<:Integer}(inds::Union{Dims{N},Indices{N}}, I::AbstractVector{T}...)

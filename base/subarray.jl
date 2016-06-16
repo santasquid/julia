@@ -258,7 +258,8 @@ unsafe_convert{T,N,P,I<:Tuple{Vararg{RangeIndex}}}(::Type{Ptr{T}}, V::SubArray{T
 
 pointer(V::FastSubArray, i::Int) = pointer(V.parent, V.offset1 + V.stride1*i)
 pointer(V::FastContiguousSubArray, i::Int) = pointer(V.parent, V.offset1 + i)
-pointer(V::SubArray, i::Int) = pointer(V, smart_ind2sub(shape(V), i))
+pointer{T}(V::SubArray{T,1}, i::Int) = pointer(V, i)
+pointer(V::SubArray, i::Int) = pointer(V, ind2sub(indices(V), i))
 
 function pointer{T,N,P<:Array,I<:Tuple{Vararg{RangeIndex}}}(V::SubArray{T,N,P,I}, is::Tuple{Vararg{Int}})
     index = first_index(V)

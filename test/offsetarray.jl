@@ -29,9 +29,8 @@ parenttype{T,N,AA}(::Type{OffsetArray{T,N,AA}}) = AA
 parenttype(A::OffsetArray) = parenttype(typeof(A))
 
 Base.parent(A::OffsetArray) = A.parent
-Base.size(A::OffsetArray) = size(parent(A))
-Base.eachindex(::LinearSlow, A::OffsetArray) = CartesianRange(indices(A))
-Base.eachindex(::LinearFast, A::OffsetVector) = indices(A, 1)
+Base.size_ok(A::OffsetArray) = size(parent(A))
+Base.length_ok(A::OffsetArray) = length(parent(A))
 Base.summary(A::OffsetArray) = string(typeof(A))*" with indices "*string(indices(A))
 
 # Implementations of indices and indices1. Since bounds-checking is
