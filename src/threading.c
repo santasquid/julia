@@ -31,7 +31,7 @@ extern "C" {
 
 #ifdef JULIA_ENABLE_THREADING
 // fallback provided for embedding
-static JL_CONST_FUNC jl_tls_states_t *jl_get_ptls_states_fallback(void)
+static JL_CONST_FUNC jl_ptls_t jl_get_ptls_states_fallback(void)
 {
 #  if !defined(_COMPILER_MICROSOFT_)
     static __thread jl_tls_states_t tls_states;
@@ -40,9 +40,9 @@ static JL_CONST_FUNC jl_tls_states_t *jl_get_ptls_states_fallback(void)
 #  endif
     return &tls_states;
 }
-static jl_tls_states_t *jl_get_ptls_states_init(void);
+static jl_ptls_t jl_get_ptls_states_init(void);
 static jl_get_ptls_states_func jl_tls_states_cb = jl_get_ptls_states_init;
-static jl_tls_states_t *jl_get_ptls_states_init(void)
+static jl_ptls_t jl_get_ptls_states_init(void)
 {
     // This 2-step initialization is used to detect calling
     // `jl_set_ptls_states_getter` after the address of the TLS variables
@@ -55,7 +55,7 @@ static jl_tls_states_t *jl_get_ptls_states_init(void)
     jl_tls_states_cb = jl_get_ptls_states_fallback;
     return jl_get_ptls_states_fallback();
 }
-JL_DLLEXPORT JL_CONST_FUNC jl_tls_states_t *(jl_get_ptls_states)(void)
+JL_DLLEXPORT JL_CONST_FUNC jl_ptls_t (jl_get_ptls_states)(void)
 {
     return (*jl_tls_states_cb)();
 }
@@ -80,7 +80,7 @@ jl_get_ptls_states_func jl_get_ptls_states_getter(void)
 }
 #else
 JL_DLLEXPORT jl_tls_states_t jl_tls_states;
-JL_DLLEXPORT JL_CONST_FUNC jl_tls_states_t *(jl_get_ptls_states)(void)
+JL_DLLEXPORT JL_CONST_FUNC jl_ptls_t (jl_get_ptls_states)(void)
 {
     return &jl_tls_states;
 }
@@ -88,16 +88,20 @@ JL_DLLEXPORT JL_CONST_FUNC jl_tls_states_t *(jl_get_ptls_states)(void)
 
 // thread ID
 JL_DLLEXPORT int jl_n_threads;     // # threads we're actually using
-jl_tls_states_t **jl_all_tls_states;
+jl_ptls_t *jl_all_tls_states;
 
 // return calling thread's ID
 // Also update the suspended_threads list in signals-mach when changing the
 // type of the thread id.
-JL_DLLEXPORT int16_t jl_threadid(void) { return ti_tid; }
+JL_DLLEXPORT int16_t jl_threadid(void)
+{
+    jl_ptls_t ptls = jl_get_ptls_states();
+    return ptls->tid;
+}
 
 static void ti_initthread(int16_t tid)
 {
-    jl_tls_states_t *ptls = jl_get_ptls_states();
+    jl_ptls_t ptls = jl_get_ptls_states();
 #ifndef _OS_WINDOWS_
     ptls->system_id = pthread_self();
 #endif
@@ -123,7 +127,7 @@ static void ti_initthread(int16_t tid)
     }
     ptls->bt_data = (uintptr_t*)bt_data;
     jl_mk_thread_heap(ptls);
-    jl_install_thread_signal_handler();
+    jl_install_thread_signal_handler(ptls);
 
     jl_all_tls_states[tid] = ptls;
 }
@@ -178,7 +182,7 @@ static uv_barrier_t thread_init_done;
 // thread function: used by all except the main thread
 void ti_threadfun(void *arg)
 {
-    jl_tls_states_t *ptls = jl_get_ptls_states();
+    jl_ptls_t ptls = jl_get_ptls_states();
     ti_threadarg_t *ta = (ti_threadarg_t *)arg;
     ti_threadgroup_t *tg;
     ti_threadwork_t *work;
@@ -188,7 +192,7 @@ void ti_threadfun(void *arg)
     jl_init_stack_limits(0);
 
     // set up tasking
-    jl_init_root_task(jl_stack_lo, jl_stack_hi - jl_stack_lo);
+    jl_init_root_task(ptls->stack_lo, ptls->stack_hi - ptls->stack_lo);
 #ifdef COPY_STACKS
     jl_set_base_ctx((char*)&arg);
 #endif
@@ -205,7 +209,7 @@ void ti_threadfun(void *arg)
     uv_barrier_wait(&thread_init_done);
     // initialize this thread in the thread group
     tg = ta->tg;
-    ti_threadgroup_initthread(tg, ti_tid);
+    ti_threadgroup_initthread(tg, ptls->tid);
 
     // free the thread argument here
     free(ta);
@@ -216,11 +220,11 @@ void ti_threadfun(void *arg)
         uint64_t tstart = uv_hrtime();
 #endif
 
-        ti_threadgroup_fork(tg, ti_tid, (void **)&work);
+        ti_threadgroup_fork(tg, ptls->tid, (void **)&work);
 
 #if PROFILE_JL_THREADING
         uint64_t tfork = uv_hrtime();
-        fork_ns[ti_tid] += tfork - tstart;
+        fork_ns[ptls->tid] += tfork - tstart;
 #endif
 
         if (work) {
@@ -247,14 +251,14 @@ void ti_threadfun(void *arg)
 
 #if PROFILE_JL_THREADING
         uint64_t tuser = uv_hrtime();
-        user_ns[ti_tid] += tuser - tfork;
+        user_ns[ptls->tid] += tuser - tfork;
 #endif
 
-        ti_threadgroup_join(tg, ti_tid);
+        ti_threadgroup_join(tg, ptls->tid);
 
 #if PROFILE_JL_THREADING
         uint64_t tjoin = uv_hrtime();
-        join_ns[ti_tid] += tjoin - tuser;
+        join_ns[ptls->tid] += tjoin - tuser;
 #endif
 
         // TODO:
@@ -283,7 +287,7 @@ void jl_init_threading(void)
     if (jl_n_threads <= 0)
         jl_n_threads = 1;
 
-    jl_all_tls_states = (jl_tls_states_t**)malloc(jl_n_threads * sizeof(void*));
+    jl_all_tls_states = (jl_ptls_t*)malloc(jl_n_threads * sizeof(void*));
 
 #if PROFILE_JL_THREADING
     // set up space for profiling information
@@ -299,6 +303,7 @@ void jl_init_threading(void)
 
 void jl_start_threads(void)
 {
+    jl_ptls_t ptls = jl_get_ptls_states();
     char *cp, mask[UV_CPU_SETSIZE];
     int i, exclusive;
     uv_thread_t uvtid;
@@ -342,7 +347,7 @@ void jl_start_threads(void)
     ti_threadgroup_create(1, jl_n_threads, 1, &tgworld);
     for (i = 0;  i < jl_n_threads;  ++i)
         ti_threadgroup_addthread(tgworld, i, NULL);
-    ti_threadgroup_initthread(tgworld, ti_tid);
+    ti_threadgroup_initthread(tgworld, ptls->tid);
 
     // give the threads the world thread group; they will block waiting for fork
     for (i = 0;  i < jl_n_threads - 1;  ++i) {
@@ -359,11 +364,12 @@ void jl_start_threads(void)
 // TODO: is this needed? where/when/how to call it?
 void jl_shutdown_threading(void)
 {
+    jl_ptls_t ptls = jl_get_ptls_states();
     // stop the spinning threads by sending them a command
     ti_threadwork_t *work = &threadwork;
 
     work->command = TI_THREADWORK_DONE;
-    ti_threadgroup_fork(tgworld, ti_tid, (void **)&work);
+    ti_threadgroup_fork(tgworld, ptls->tid, (void **)&work);
 
     sleep(1);
 
@@ -385,7 +391,7 @@ JL_DLLEXPORT void *jl_threadgroup(void) { return (void *)tgworld; }
 // and run it in all threads
 JL_DLLEXPORT jl_value_t *jl_threading_run(jl_svec_t *args)
 {
-    jl_tls_states_t *ptls = jl_get_ptls_states();
+    jl_ptls_t ptls = jl_get_ptls_states();
     // GC safe
 #if PROFILE_JL_THREADING
     uint64_t tstart = uv_hrtime();
@@ -413,11 +419,11 @@ JL_DLLEXPORT jl_value_t *jl_threading_run(jl_svec_t *args)
 
     // fork the world thread group
     ti_threadwork_t *tw = &threadwork;
-    ti_threadgroup_fork(tgworld, ti_tid, (void **)&tw);
+    ti_threadgroup_fork(tgworld, ptls->tid, (void **)&tw);
 
 #if PROFILE_JL_THREADING
     uint64_t tfork = uv_hrtime();
-    fork_ns[ti_tid] += (tfork - tcompile);
+    fork_ns[ptls->tid] += (tfork - tcompile);
 #endif
 
     // this thread must do work too (TODO: reduction?)
@@ -425,17 +431,17 @@ JL_DLLEXPORT jl_value_t *jl_threading_run(jl_svec_t *args)
 
 #if PROFILE_JL_THREADING
     uint64_t trun = uv_hrtime();
-    user_ns[ti_tid] += (trun - tfork);
+    user_ns[ptls->tid] += (trun - tfork);
 #endif
 
     jl_gc_state_set(ptls, JL_GC_STATE_SAFE, 0);
     // wait for completion (TODO: nowait?)
-    ti_threadgroup_join(tgworld, ti_tid);
+    ti_threadgroup_join(tgworld, ptls->tid);
     jl_gc_state_set(ptls, 0, JL_GC_STATE_SAFE);
 
 #if PROFILE_JL_THREADING
     uint64_t tjoin = uv_hrtime();
-    join_ns[ti_tid] += (tjoin - trun);
+    join_ns[ptls->tid] += (tjoin - trun);
 #endif
 
     JL_GC_POP();
@@ -508,7 +514,7 @@ JL_DLLEXPORT jl_value_t *jl_threading_run(jl_svec_t *args)
 
 void jl_init_threading(void)
 {
-    static jl_tls_states_t *_jl_all_tls_states;
+    static jl_ptls_t _jl_all_tls_states;
     jl_all_tls_states = &_jl_all_tls_states;
     jl_n_threads = 1;
 

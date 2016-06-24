@@ -35,7 +35,7 @@ extern "C" {
 #endif
 
 #ifdef JULIA_ENABLE_THREADING
-static JL_CONST_FUNC jl_tls_states_t *jl_get_ptls_states_static(void)
+static JL_CONST_FUNC jl_ptls_t jl_get_ptls_states_static(void)
 {
 #  if !defined(_COMPILER_MICROSOFT_)
     static __attribute__((tls_model("local-exec"))) __thread jl_tls_states_t tls_states;
