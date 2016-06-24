@@ -185,7 +185,7 @@ and its left and right neighbor along a 1-d grid. :
 
 .. doctest:: array-rand
 
-    julia> const x = rand(8)
+    julia> x = rand(8)
     8-element Array{Float64,1}:
      0.843025
      0.869052
@@ -205,16 +205,11 @@ and its left and right neighbor along a 1-d grid. :
      0.8446
      0.656511
 
-.. note:: In the above example, ``x`` is declared as constant because type
-  inference in Julia does not work as well on non-constant global
-  variables.
+The resulting array type depends on the types of the computed elements.
+In order to control the type explicitly, a type can be prepended to the comprehension.
+For example, we could have requested the result in single precision by writing::
 
-The resulting array type is inferred from the expression; in order to control
-the type explicitly, the type can be prepended to the comprehension. For example,
-in the above example we could have avoided declaring ``x`` as constant, and ensured
-that the result is of type ``Float64`` by writing::
-
-    Float64[ 0.25*x[i-1] + 0.5*x[i] + 0.25*x[i+1] for i=2:length(x)-1 ]
+    Float32[ 0.25*x[i-1] + 0.5*x[i] + 0.25*x[i+1] for i=2:length(x)-1 ]
 
 .. _man-generator-expressions:
 
