@@ -1,6 +1,6 @@
 # This file is a part of Julia. License is MIT: http://julialang.org/license
 
-replstr(x) = sprint((io,x) -> show(IOContext(io, multiline=true, limit=true), MIME("text/plain"), x), x)
+replstr(x) = sprint((io,x) -> show(IOContext(io, limit=true), MIME("text/plain"), x), x)
 
 @test replstr(Array{Any}(2)) == "2-element Array{Any,1}:\n #undef\n #undef"
 @test replstr(Array{Any}(2,2)) == "2×2 Array{Any,2}:\n #undef  #undef\n #undef  #undef"
@@ -486,10 +486,6 @@ let io = IOBuffer()
     x = [1, 2]
     showcompact(io, x)
     @test takebuf_string(io) == "[1,2]"
-    showcompact(IOContext(io, :multiline=>true), x)
-    @test takebuf_string(io) == "[1,2]"
     showcompact(IOContext(io, :compact=>true), x)
-    @test takebuf_string(io) == "[1,2]"
-    showcompact(IOContext(IOContext(io, :compact=>true), :multiline=>true), x)
     @test takebuf_string(io) == "[1,2]"
 end
