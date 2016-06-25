@@ -28,8 +28,13 @@ let REF_ID::Int = 1
 end
 
 immutable RRID
+<<<<<<< Updated upstream
     whence::Int
     id::Int
+=======
+    whence
+    id
+>>>>>>> Stashed changes
 
     RRID() = RRID(myid(),next_ref_id())
     RRID(whence, id) = new(whence,id)
@@ -57,39 +62,48 @@ end
 # Used instead of Nullable to decrease wire size of header.
 null_id(id) =  id == RRID(0, 0)
 
+<<<<<<< Updated upstream
 type CallMsg{Mode} <: AbstractMsg
+=======
+MsgHeader(;response_oid::RRID=RRID(0,0), notify_oid::RRID=RRID(0,0)) =
+    MsgHeader(response_oid, notify_oid)
+
+immutable CallMsg{Mode} <: AbstractMsg
+>>>>>>> Stashed changes
     f::Function
     args::Tuple
     kwargs::Array
 end
-type CallWaitMsg <: AbstractMsg
+immutable CallWaitMsg <: AbstractMsg
     f::Function
     args::Tuple
     kwargs::Array
 end
-type RemoteDoMsg <: AbstractMsg
+immutable RemoteDoMsg <: AbstractMsg
     f::Function
     args::Tuple
     kwargs::Array
 end
-type ResultMsg <: AbstractMsg
+immutable ResultMsg <: AbstractMsg
     value::Any
 end
 
 
 # Worker initialization messages
-type IdentifySocketMsg <: AbstractMsg
+immutable IdentifySocketMsg <: AbstractMsg
     from_pid::Int
 end
-type IdentifySocketAckMsg <: AbstractMsg
+
+immutable IdentifySocketAckMsg <: AbstractMsg
 end
-type JoinPGRPMsg <: AbstractMsg
+
+immutable JoinPGRPMsg <: AbstractMsg
     self_pid::Int
     other_workers::Array
     topology::Symbol
     worker_pool
 end
-type JoinCompleteMsg <: AbstractMsg
+immutable JoinCompleteMsg <: AbstractMsg
     cpu_cores::Int
     ospid::Int
 end
@@ -260,13 +274,28 @@ end
 # A size of 10 bytes indicates ~ ~1e24 possible boundaries, so chance of collision with message contents is trivial.
 const MSG_BOUNDARY = UInt8[0x79, 0x8e, 0x8e, 0xf5, 0x6e, 0x9b, 0x2e, 0x97, 0xd5, 0x7d]
 
+function serialize_hdr_raw(io, hdr)
+    write(io, hdr.response_oid.whence)
+    write(io, hdr.response_oid.id)
+    write(io, hdr.notify_oid.whence)
+    write(io, hdr.notify_oid.id)
+end
+
+function deserialize_hdr_raw(io)
+    rid_whence = read(io, Int)
+    rid_id = read(io, Int)
+    nid_whence = read(io, Int)
+    nid_id = read(io, Int)
+    return MsgHeader(RRID(rid_whence, rid_id), RRID(nid_whence, nid_id))
+end
+
 function send_msg_(w::Worker, header, msg, now::Bool)
     check_worker_state(w)
     io = w.w_stream
     lock(io.lock)
     try
         reset_state(w.w_serializer)
-        serialize(w.w_serializer, header)
+        serialize_hdr_raw(io, header)
         serialize(w.w_serializer, msg)  # io is wrapped in w_serializer
         write(io, MSG_BOUNDARY)
 
@@ -1022,7 +1051,7 @@ function message_handler_loop(r_stream::IO, w_stream::IO, incoming::Bool)
         serializer = ClusterSerializer(r_stream)
 
         # The first message will associate wpid with r_stream
-        msghdr = deserialize(serializer)
+        msghdr = deserialize_hdr_raw(r_stream)
         msg = deserialize(serializer)
         readbytes!(r_stream, boundary, length(MSG_BOUNDARY))
 
@@ -1033,7 +1062,7 @@ function message_handler_loop(r_stream::IO, w_stream::IO, incoming::Bool)
 
         while true
             reset_state(serializer)
-            msghdr = deserialize(serializer)
+            msghdr = deserialize_hdr_raw(r_stream)
 #            println("msghdr: ", msghdr)
 
             try
