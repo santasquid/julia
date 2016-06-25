@@ -28,13 +28,8 @@ let REF_ID::Int = 1
 end
 
 immutable RRID
-<<<<<<< Updated upstream
     whence::Int
     id::Int
-=======
-    whence
-    id
->>>>>>> Stashed changes
 
     RRID() = RRID(myid(),next_ref_id())
     RRID(whence, id) = new(whence,id)
@@ -62,14 +57,7 @@ end
 # Used instead of Nullable to decrease wire size of header.
 null_id(id) =  id == RRID(0, 0)
 
-<<<<<<< Updated upstream
 type CallMsg{Mode} <: AbstractMsg
-=======
-MsgHeader(;response_oid::RRID=RRID(0,0), notify_oid::RRID=RRID(0,0)) =
-    MsgHeader(response_oid, notify_oid)
-
-immutable CallMsg{Mode} <: AbstractMsg
->>>>>>> Stashed changes
     f::Function
     args::Tuple
     kwargs::Array
