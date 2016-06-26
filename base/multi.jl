@@ -96,6 +96,42 @@ immutable JoinCompleteMsg <: AbstractMsg
     ospid::Int
 end
 
+# Avoiding serializing AbstractMsg containers results in a speedup
+# of approximately 10%. Can be removed once any overhead in the Serilizer
+# has been removed.
+
+# replace  CallMsg{Mode} with specific invocations
+msgtypes = filter!(x->x!=CallMsg, subtypes(AbstractMsg))
+push!(msgtypes, CallMsg{:call}, CallMsg{:call_fetch})
+
+for (idx,tname) in enumerate(msgtypes)
+    @eval begin
+        function serialize_msg(s, o::$tname)
+            serialize(s, $idx)
+            serialize_msg(Val{$idx}, s, o)
+        end
+
+        function serialize_msg(::Type{Val{$idx}}, s, o)
+            for fld in fieldnames($tname)
+                serialize(s, getfield(o, fld))
+            end
+        end
+
+        function deserialize_msg(::Type{Val{$idx}}, s)
+            data=[]
+            for fld in fieldnames($tname)
+                push!(data, deserialize(s))
+            end
+            return ($tname)(data...)
+        end
+    end
+end
+
+function deserialize_msg(s)
+    idx = deserialize(s)
+    return deserialize_msg(Val{idx}, s)
+end
+
 function send_msg_unknown(s::IO, header, msg)
     error("attempt to send to unknown socket")
 end
@@ -284,7 +320,7 @@ function send_msg_(w::Worker, header, msg, now::Bool)
     try
         reset_state(w.w_serializer)
         serialize_hdr_raw(io, header)
-        serialize(w.w_serializer, msg)  # io is wrapped in w_serializer
+        serialize_msg(w.w_serializer, msg)  # io is wrapped in w_serializer
         write(io, MSG_BOUNDARY)
 
         if !now && w.gcflag
@@ -1040,7 +1076,7 @@ function message_handler_loop(r_stream::IO, w_stream::IO, incoming::Bool)
 
         # The first message will associate wpid with r_stream
         msghdr = deserialize_hdr_raw(r_stream)
-        msg = deserialize(serializer)
+        msg = deserialize_msg(serializer)
         readbytes!(r_stream, boundary, length(MSG_BOUNDARY))
 
         handle_msg(msg, msghdr, r_stream, w_stream, version)
@@ -1051,10 +1087,10 @@ function message_handler_loop(r_stream::IO, w_stream::IO, incoming::Bool)
         while true
             reset_state(serializer)
             msghdr = deserialize_hdr_raw(r_stream)
-#            println("msghdr: ", msghdr)
+            # println("msghdr: ", msghdr)
 
             try
-                msg = deserialize(serializer)
+                msg = deserialize_msg(serializer)
             catch e
                 # Deserialization error; discard bytes in stream until boundary found
                 boundary_idx = 1
@@ -1071,8 +1107,8 @@ function message_handler_loop(r_stream::IO, w_stream::IO, incoming::Bool)
                         boundary_idx = 1
                     end
                 end
- #               println("Deserialization error.")
                 remote_err = RemoteException(myid(), CapturedException(e, catch_backtrace()))
+                # println("Deserialization error. ", remote_err)
                 if !null_id(msghdr.response_oid)
                     ref = lookup_ref(msghdr.response_oid)
                     put!(ref, remote_err)
@@ -1084,7 +1120,7 @@ function message_handler_loop(r_stream::IO, w_stream::IO, incoming::Bool)
             end
             readbytes!(r_stream, boundary, length(MSG_BOUNDARY))
 
-  #          println("got msg: ", typeof(msg))
+            # println("got msg: ", typeof(msg))
             handle_msg(msg, msghdr, r_stream, w_stream, version)
         end
     catch e
