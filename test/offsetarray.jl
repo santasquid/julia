@@ -7,7 +7,7 @@
 
 module OAs
 
-using Base: SimIdx, Indices, LinearSlow, LinearFast
+using Base: DimOrInd, Indices, LinearSlow, LinearFast
 
 export OffsetArray
 
@@ -29,8 +29,8 @@ parenttype{T,N,AA}(::Type{OffsetArray{T,N,AA}}) = AA
 parenttype(A::OffsetArray) = parenttype(typeof(A))
 
 Base.parent(A::OffsetArray) = A.parent
-Base.size_ok(A::OffsetArray) = size(parent(A))
-Base.length_ok(A::OffsetArray) = length(parent(A))
+Base.size(A::OffsetArray) = size(parent(A))
+Base.length(A::OffsetArray) = length(parent(A))
 Base.summary(A::OffsetArray) = string(typeof(A))*" with indices "*string(indices(A))
 
 # Implementations of indices and indices1. Since bounds-checking is
@@ -47,13 +47,13 @@ Base.indices1{T}(A::OffsetArray{T,0}) = 1:1
 function Base.similar(A::OffsetArray, T::Type, dims::Dims)
     B = similar(parent(A), T, dims)
 end
-function Base.similar(A::AbstractArray, T::Type, inds::Tuple{Vararg{SimIdx}})
+function Base.similar(A::AbstractArray, T::Type, inds::Tuple{Vararg{DimOrInd}})
     B = similar(A, T, map(Base.dimlength, inds))
     OffsetArray(B, map(indsoffset, inds))
 end
 
-Base.allocate_for(f, A::OffsetArray, shape::SimIdx) = OffsetArray(f(Base.dimlength(shape)), (indsoffset(shape),))
-Base.allocate_for(f, A::OffsetArray, shape::Tuple{Vararg{SimIdx}}) = OffsetArray(f(map(Base.dimlength, shape)), map(indsoffset, shape))
+Base.allocate_for(f, A::OffsetArray, shape::DimOrInd) = OffsetArray(f(Base.dimlength(shape)), (indsoffset(shape),))
+Base.allocate_for(f, A::OffsetArray, shape::Tuple{Vararg{DimOrInd}}) = OffsetArray(f(map(Base.dimlength, shape)), map(indsoffset, shape))
 Base.promote_indices(a::OffsetArray, b::OffsetArray) = a
 
 Base.reshape(A::AbstractArray, inds::Indices) = OffsetArray(reshape(A, map(Base.dimlength, inds)), map(indsoffset, inds))
